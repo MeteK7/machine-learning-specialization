@@ -1,1 +1,4 @@
+# environments
 ml-env/
+venv/
+.env/
