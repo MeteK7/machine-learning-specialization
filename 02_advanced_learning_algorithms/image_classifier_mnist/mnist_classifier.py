@@ -5,10 +5,9 @@ import os
 import numpy as np
 import tensorflow as tf
 import matplotlib.pyplot as plt
-
+from matplotlib.widgets import Button
 from tensorflow.keras import Sequential
 from tensorflow.keras.layers import Dense, Flatten
-
 from PIL import Image
 
 # =========================
@@ -33,9 +32,6 @@ if os.path.exists(MODEL_PATH):
     model = tf.keras.models.load_model(MODEL_PATH)
     print("Model loaded — skipping training.")
 else:
-    # -------------------------
-    # Build
-    # -------------------------
     model = Sequential([
         Flatten(input_shape=(28, 28)),
         Dense(128, activation='relu'),
@@ -43,18 +39,12 @@ else:
         Dense(10,  activation='softmax')
     ])
 
-    # -------------------------
-    # Compile
-    # -------------------------
     model.compile(
         optimizer='adam',
         loss='sparse_categorical_crossentropy',
         metrics=['accuracy']
     )
 
-    # -------------------------
-    # Train
-    # -------------------------
     history = model.fit(
         X_train,
         y_train,
@@ -63,9 +53,6 @@ else:
         verbose=1
     )
 
-    # -------------------------
-    # Save
-    # -------------------------
     model.save(MODEL_PATH)
     print(f"\nModel saved to {MODEL_PATH}")
 
@@ -76,7 +63,7 @@ test_loss, test_acc = model.evaluate(X_test, y_test, verbose=0)
 print("\nTest accuracy:", test_acc)
 
 # =========================
-# 5. Predictions on MNIST
+# 5. Predictions on MNIST test set
 # =========================
 predictions = model.predict(X_test, verbose=0)
 
@@ -88,150 +75,129 @@ accuracy    = np.mean(pred_labels == y_test)
 print("Manual accuracy check:", accuracy)
 
 # =========================
-# 7. Show Prediction
+# 7. Show MNIST Test Prediction
 # =========================
 def show_prediction(index):
+    fig, (ax_img, ax_bar) = plt.subplots(1, 2, figsize=(9, 4))
+    fig.suptitle("MNIST Test Sample", fontsize=13)
 
-    plt.imshow(X_test[index], cmap='gray')
-
+    ax_img.imshow(X_test[index], cmap='gray')
     pred_label = np.argmax(predictions[index])
     confidence = np.max(predictions[index])
-
-    plt.title(
-        f"Predicted: {pred_label} | "
-        f"True: {y_test[index]} | "
-        f"Confidence: {confidence:.2f}"
+    ax_img.set_title(
+        f"Predicted: {pred_label}  |  True: {y_test[index]}\n"
+        f"Confidence: {confidence:.2%}"
     )
+    ax_img.axis('off')
 
-    plt.axis('off')
+    colors = ['tomato' if i == pred_label else 'steelblue' for i in range(10)]
+    ax_bar.bar(range(10), predictions[index], color=colors)
+    ax_bar.set_title("Softmax Probabilities")
+    ax_bar.set_xlabel("Digit class")
+    ax_bar.set_ylabel("Probability")
+    ax_bar.set_xticks(range(10))
+    ax_bar.set_ylim(0, 1)
+
+    plt.tight_layout()
     plt.show()
 
 # =========================
-# 8. Show Probabilities
+# 8. Drawing UI (Persistent Window)
 # =========================
-def show_probabilities(index):
+def draw_digit_and_predict():
+    canvas = np.ones((280, 280))   # white background
 
-    probs = predictions[index]
+    fig = plt.figure(figsize=(13, 5))
+    fig.suptitle("MNIST Digit AI — Draw Your Digit", fontsize=13)
+    plt.subplots_adjust(left=0.05, right=0.97, bottom=0.22, top=0.88, wspace=0.45)
 
-    plt.bar(range(10), probs)
-    plt.title(f"Softmax probabilities for sample {index}")
-    plt.xlabel("Digit class")
-    plt.ylabel("Probability")
-    plt.show()
+    ax_draw = fig.add_subplot(1, 3, 1)
+    ax_prev = fig.add_subplot(1, 3, 2)
+    ax_prob = fig.add_subplot(1, 3, 3)
 
-# =========================
-# 9. DRAWING UI
-# =========================
-def draw_digit():
+    ax_draw.set_title("Draw here", fontsize=11)
+    img_display = ax_draw.imshow(canvas, cmap='gray', vmin=0, vmax=1)
+    ax_draw.axis('off')
 
-    # Large canvas for easier drawing (white background = 1.0)
-    canvas = np.ones((280, 280))
+    ax_prev.set_title("Model Input Preview (28×28)", fontsize=11)
+    prev_display = ax_prev.imshow(np.zeros((28, 28)), cmap='gray', vmin=0, vmax=1)
+    ax_prev.axis('off')
 
-    fig, ax = plt.subplots()
-    ax.set_title("Draw a digit with your mouse.\nClose the window when finished.")
-
-    image_display = ax.imshow(
-        canvas,
-        cmap='gray',
-        vmin=0,
-        vmax=1
-    )
-
-    plt.axis('off')
+    ax_prob.set_title("Prediction", fontsize=11)
+    bars = ax_prob.bar(range(10), np.zeros(10), color='steelblue')
+    ax_prob.set_xlim(-0.5, 9.5)
+    ax_prob.set_ylim(0, 1)
+    ax_prob.set_xlabel("Digit")
+    ax_prob.set_ylabel("Probability")
+    ax_prob.set_xticks(range(10))
 
     drawing = False
-
-    # -------------------------
-    # Mouse Press
-    # -------------------------
     def on_press(event):
         nonlocal drawing
-        drawing = True
-
-    # -------------------------
-    # Mouse Release
-    # -------------------------
+        if event.inaxes == ax_draw:
+            drawing = True
     def on_release(event):
         nonlocal drawing
         drawing = False
-
-    # -------------------------
-    # Mouse Movement
-    # -------------------------
     def on_move(event):
-
-        if drawing and event.xdata is not None and event.ydata is not None:
-
-            x = int(event.xdata)
-            y = int(event.ydata)
-
+        if drawing and event.inaxes == ax_draw and event.xdata and event.ydata:
+            x, y = int(event.xdata), int(event.ydata)
             if 0 <= x < 280 and 0 <= y < 280:
-
-                # FIX: clamp brush bounds so negative indices are never used
                 y0, y1 = max(0, y - 6), min(280, y + 6)
                 x0, x1 = max(0, x - 6), min(280, x + 6)
-
-                canvas[y0:y1, x0:x1] = 0  # draw black pixels
-
-                image_display.set_data(canvas)
+                canvas[y0:y1, x0:x1] = 0
+                img_display.set_data(canvas)
                 fig.canvas.draw_idle()
 
-    # Connect mouse events
     fig.canvas.mpl_connect('button_press_event',   on_press)
     fig.canvas.mpl_connect('button_release_event', on_release)
     fig.canvas.mpl_connect('motion_notify_event',  on_move)
 
-    plt.show()
+    ax_btn_predict = plt.axes([0.38, 0.05, 0.13, 0.09])
+    ax_btn_clear   = plt.axes([0.53, 0.05, 0.13, 0.09])
 
-    # =========================
-    # Convert to 28×28
-    # =========================
-    img = Image.fromarray((canvas * 255).astype(np.uint8))
+    btn_predict = Button(ax_btn_predict, 'Predict', color='#d0e8ff', hovercolor='#a8d0ff')
+    btn_clear   = Button(ax_btn_clear,   'Clear',   color='#ffe0d0', hovercolor='#ffb8a0')
 
-    # FIX: use LANCZOS for consistent, high-quality downscaling
-    img = img.resize((28, 28), Image.LANCZOS)
+    def on_predict(event):
+        img = Image.fromarray((canvas * 255).astype(np.uint8))
+        img = img.resize((28, 28), Image.LANCZOS)
+        img_array = np.array(img) / 255.0
+        img_array = 1.0 - img_array
 
-    img_array = np.array(img) / 255.0
+        prev_display.set_data(img_array)
+        prediction = model.predict(img_array.reshape(1, 28, 28), verbose=0)
+        pred_label = int(np.argmax(prediction))
+        confidence = float(np.max(prediction))
 
-    # FIX: invert so the digit is white-on-black, matching MNIST format
-    img_array = 1.0 - img_array
+        for i, (bar, h) in enumerate(zip(bars, prediction[0])):
+            bar.set_height(h)
+            bar.set_color('tomato' if i == pred_label else 'steelblue')
 
-    return img_array
+        ax_prob.set_title(f"Predicted: {pred_label}   ({confidence:.1%})", fontsize=11, color='tomato')
+        print(f"\nPredicted Digit : {pred_label}")
+        print(f"Confidence      : {confidence:.4f}")
+        fig.canvas.draw_idle()
 
-# =========================
-# 10. Predict Drawn Digit
-# =========================
-def predict_custom_digit(img):
+    def on_clear(event):
+        canvas[:] = 1.0
+        img_display.set_data(canvas)
+        prev_display.set_data(np.zeros((28, 28)))
+        for bar in bars:
+            bar.set_height(0)
+            bar.set_color('steelblue')
+        ax_prob.set_title("Prediction", fontsize=11, color='black')
+        fig.canvas.draw_idle()
 
-    img_input  = img.reshape(1, 28, 28)
+    btn_predict.on_clicked(on_predict)
+    btn_clear.on_clicked(on_clear)
 
-    # FIX: verbose=0 suppresses the distracting progress bar
-    prediction = model.predict(img_input, verbose=0)
-
-    pred_label = np.argmax(prediction)
-    confidence = np.max(prediction)
-
-    print("\nPredicted Digit:", pred_label)
-    print("Confidence:     ", round(confidence, 4))
-
-    # Show image
-    plt.imshow(img, cmap='gray')
-    plt.title(f"Predicted: {pred_label} | Confidence: {confidence:.2f}")
-    plt.axis('off')
-    plt.show()
-
-    # Probability graph
-    plt.bar(range(10), prediction[0])
-    plt.title("Softmax Probabilities")
-    plt.xlabel("Digit")
-    plt.ylabel("Probability")
     plt.show()
 
 # =========================
-# 11. MAIN MENU
+# 9. MAIN MENU
 # =========================
 while True:
-
     print("\n=========================")
     print("MNIST DIGIT AI")
     print("=========================")
@@ -241,12 +207,7 @@ while True:
 
     choice = input("\nSelect option: ").strip()
 
-    # =========================
-    # Option 1
-    # =========================
     if choice == "1":
-
-        # FIX: validate input — catch non-integers and out-of-range values
         try:
             index = int(input(f"Enter test image index (0-{len(X_test)-1}): "))
             if not 0 <= index < len(X_test):
@@ -254,23 +215,12 @@ while True:
         except ValueError:
             print(f"\nInvalid input. Please enter a number between 0 and {len(X_test)-1}.")
             continue
-
         show_prediction(index)
-        show_probabilities(index)
 
-    # =========================
-    # Option 2
-    # =========================
     elif choice == "2":
+        draw_digit_and_predict()
 
-        drawn_digit = draw_digit()
-        predict_custom_digit(drawn_digit)
-
-    # =========================
-    # Option 3
-    # =========================
     elif choice == "3":
-
         print("\nExiting...")
         break
 
