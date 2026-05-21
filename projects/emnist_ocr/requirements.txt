@@ -1,0 +1,9 @@
+# EMNIST OCR Project — Dependencies
+# Install with:  pip install -r requirements.txt
+
+tensorflow>=2.12
+tensorflow-datasets>=4.9
+opencv-python>=4.8
+numpy>=1.24
+matplotlib>=3.7
+Pillow>=10.0
